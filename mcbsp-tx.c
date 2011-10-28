@@ -12,7 +12,6 @@
 #include <linux/slab.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
-#include <linux/list.h>
 #include <asm/uaccess.h>
 #include <plat/dma.h>
 #include <plat/mcbsp.h>
@@ -21,6 +20,7 @@
 //#include "mcbsp-tx.h"
 
 #define DEVICE_NAME "mcbsp-tx"
+#define OMAP_MCBSP3 2
 
 #define DEFAULT_DMA_QUEUE_THRESHOLD 10
 
@@ -220,7 +220,7 @@ static int mcbsptx_open(struct inode *inode, struct file *filp)
 
         omap_set_dma_dest_params(dma_channel, 0,
                                  OMAP_DMA_AMODE_CONSTANT,
-                                 OMAP34XX_MCBSP3_BASE + OMAP_MCBSP_REG_DXR,
+                                 omap_mcbsp_dma_reg_params(OMAP_MCBSP3, 0),
                                  0, 0);
 
         omap_disable_dma_irq(dma_channel, OMAP_DMA_DROP_IRQ);
@@ -249,7 +249,7 @@ static int mcbsptx_open(struct inode *inode, struct file *filp)
     return ret;
 }
 
-int mcbsptx_release(struct inode *inode, struct file *file)
+static int mcbsptx_release(struct inode *inode, struct file *file)
 {
     printk(KERN_INFO "McBSP-TX release\n");
 
@@ -329,15 +329,6 @@ static const struct file_operations mcbsptx_fops = {
 static int mcbsptx_mcbsp_request(void)
 {
     int ret = 0;
-
-    /* We don't want POLL_IO, but we don't want the mcbsp driver
-       allocating irq handlers for McBSP events that we might need.
-       Have to call this before omap_mcbsp_request(). */
-    ret = omap_mcbsp_set_io_type(OMAP_MCBSP3, OMAP_MCBSP_POLL_IO);
-    if (ret < 0) {
-        printk(KERN_ERR "omap_mcbsp_set_io_type() failed\n");
-        goto fail;
-    }
 
     ret = omap_mcbsp_request(OMAP_MCBSP3);
     if (ret < 0) {
@@ -439,4 +430,4 @@ module_exit(mcbsptx_exit);
 MODULE_AUTHOR("Tamas Bondar");
 MODULE_DESCRIPTION("OMAP3530 McBSP-TX driver");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("0.1");
+MODULE_VERSION("0.2");
