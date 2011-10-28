@@ -82,6 +82,20 @@ struct list_head dma_blocks;    /* awaiting DMA transfer */
 /* Block currently under DMA transaction */
 static mcbsptx_block_t *dma_block;
 
+/* Device Control */
+static ssize_t control_test_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%u\n", 2011);
+}
+
+/* Control attributes */
+static struct device_attribute control_attrs[] = {
+    //__ATTR(brightness, 0644, led_brightness_show, led_brightness_store),
+    __ATTR(test, 0444, control_test_show, NULL),
+    __ATTR_NULL
+};
+
+
 /*
   Configure for 32 bit 'word' lengths with a frame sync pulse of
   two CLKDV cycles between each 'word'. 
@@ -384,6 +398,7 @@ static int __init mcbsptx_init(void)
         printk(KERN_ALERT "class_create() failed\n");
         goto fail3;
     }
+    mcbsptx.class->dev_attrs = control_attrs;
 
     /* Send uevents to udev to create device nodes */
     mcbsptx.dev = device_create(mcbsptx.class, NULL, mcbsptx.devt, NULL, DEVICE_NAME);
@@ -430,4 +445,4 @@ module_exit(mcbsptx_exit);
 MODULE_AUTHOR("Tamas Bondar");
 MODULE_DESCRIPTION("OMAP3530 McBSP-TX driver");
 MODULE_LICENSE("GPL v2");
-MODULE_VERSION("0.2");
+MODULE_VERSION("0.3");
