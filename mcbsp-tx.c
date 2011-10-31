@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/cdev.h>
 #include <linux/device.h>
+#include <linux/ctype.h>
 #include <asm/uaccess.h>
 #include <plat/dma.h>
 #include <plat/mcbsp.h>
@@ -45,6 +46,12 @@ struct mcbsptx {
 static struct mcbsptx mcbsptx;
 
 #define DEFAULT_CLKDIV 83
+
+#define CLKGDV_MASK (0xff)
+#define WDLEN_MASK  (0x07)
+#define FRLEN_MASK  (0x7f)
+#define FWID_MASK   (0xff)
+#define FPER_MASK   (0x0fff)
 
 static struct omap_mcbsp_reg_cfg mcbsp_config = {
     .spcr2 = XINTM(3),
@@ -90,9 +97,8 @@ static mcbsptx_block_t *dma_block;
 static ssize_t attr_word_length_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     unsigned int val;
-    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
 
-    switch(MCBSP_READ(mcbsp, XCR1) & XWDLEN1(0x07))
+    switch(mcbsp_config.xcr1 & XWDLEN1(WDLEN_MASK))
     {
     case XWDLEN1(OMAP_MCBSP_WORD_8):
         val = 8;
@@ -119,82 +125,185 @@ static ssize_t attr_word_length_show(struct device *dev, struct device_attribute
     return sprintf(buf, "%u\n", val);
 }
 
+static ssize_t attr_word_length_store(struct device *dev, struct device_attribute *attr,
+                                      const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+    char *endp;
+    unsigned int val2;
+    unsigned long val = simple_strtoul(buf, &endp, 10);
+    size_t count = endp - buf;
+
+    if (isspace(*endp))
+            count++;
+
+    if (count != size)
+        goto exit;
+
+    switch(val) {
+    case 8:
+        val2 = OMAP_MCBSP_WORD_8;
+        break;
+    case 12:
+        val2 = OMAP_MCBSP_WORD_12;
+        break;
+    case 16:
+        val2 = OMAP_MCBSP_WORD_16;
+        break;
+    case 20:
+        val2 = OMAP_MCBSP_WORD_20;
+        break;
+    case 24:
+        val2 = OMAP_MCBSP_WORD_24;
+        break;
+    case 32:
+        val2 = OMAP_MCBSP_WORD_32;
+        break;
+    default:
+        goto exit;
+    }
+    mcbsp_config.xcr1  &= ~XWDLEN1(WDLEN_MASK);
+    mcbsp_config.xcr1  |= XWDLEN1(val2);
+    ret = count;
+
+ exit:
+    return ret;
+}
+
 static ssize_t attr_frame_length_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     unsigned int val;
-    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
 
-    val = (MCBSP_READ(mcbsp, XCR1) & XFRLEN1(0x7f)); /* mask bitfield */
+    val = mcbsp_config.xcr1 & XFRLEN1(FRLEN_MASK); /* mask bitfield */
     val /= XFRLEN1(1); /* shift right to bit 0 */
     val += 1;
 
     return sprintf(buf, "%u\n", val);
 }
 
+static ssize_t attr_frame_length_store(struct device *dev, struct device_attribute *attr,
+                                       const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+    char *endp;
+    unsigned long val = simple_strtoul(buf, &endp, 10);
+    size_t count = endp - buf;
+
+    if (isspace(*endp))
+            count++;
+
+    if (count == size && val > 0 && val <= FRLEN_MASK + 1) {
+        mcbsp_config.xcr1  &= ~XFRLEN1(FRLEN_MASK);
+        mcbsp_config.xcr1  |= XFRLEN1(val-1);
+        ret = count;
+    }
+    return ret;
+}
+
 static ssize_t attr_frame_width_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     unsigned int val;
-    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
 
-    val = (MCBSP_READ(mcbsp, SRGR1) & FWID(0xff)); /* mask bitfield */
+    val = mcbsp_config.srgr1 & FWID(FWID_MASK); /* mask bitfield */
     val /= FWID(1); /* shift right to bit 0 */
     val += 1;
 
     return sprintf(buf, "%u\n", val);
 }
 
+static ssize_t attr_frame_width_store(struct device *dev, struct device_attribute *attr,
+                                      const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+    char *endp;
+    unsigned long val = simple_strtoul(buf, &endp, 10);
+    size_t count = endp - buf;
+
+    if (isspace(*endp))
+            count++;
+
+    if (count == size && val > 0 && val <= FWID_MASK + 1) {
+        mcbsp_config.srgr1  &= ~FWID(FWID_MASK);
+        mcbsp_config.srgr1  |= FWID(val-1);
+        ret = count;
+    }
+    return ret;
+}
+
 static ssize_t attr_frame_period_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     unsigned int val;
-    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
 
-    val = (MCBSP_READ(mcbsp, SRGR2) & FPER(0x0fff)); /* mask bitfield */
+    val = mcbsp_config.srgr2 & FPER(FPER_MASK); /* mask bitfield */
     val /= FPER(1); /* shift right to bit 0 */
     val += 1;
 
     return sprintf(buf, "%u\n", val);
 }
 
+static ssize_t attr_frame_period_store(struct device *dev, struct device_attribute *attr,
+                                       const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+    char *endp;
+    unsigned long val = simple_strtoul(buf, &endp, 10);
+    size_t count = endp - buf;
+
+    if (isspace(*endp))
+            count++;
+
+    if (count == size && val > 0 && val <= FPER_MASK + 1) {
+        mcbsp_config.srgr2  &= ~FPER(FPER_MASK);
+        mcbsp_config.srgr2  |= FPER(val-1);
+        ret = count;
+    }
+    return ret;
+}
+
 static ssize_t attr_clock_divider_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     unsigned int val;
-    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
 
-    val = (MCBSP_READ(mcbsp, SRGR1) & CLKGDV(0xff)); /* mask bitfield */
+    val = mcbsp_config.srgr1 & CLKGDV(CLKGDV_MASK); /* mask bitfield */
     val /= CLKGDV(1); /* shift right to bit 0 */
 
     return sprintf(buf, "%u\n", val);
 }
 
+static ssize_t attr_clock_divider_store(struct device *dev, struct device_attribute *attr,
+                                        const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+    char *endp;
+    unsigned long val = simple_strtoul(buf, &endp, 10);
+    size_t count = endp - buf;
+
+    if (isspace(*endp))
+            count++;
+
+    if (count == size && val > 0 && val <= CLKGDV_MASK) {
+        mcbsp_config.srgr1  &= ~CLKGDV(CLKGDV_MASK);
+        mcbsp_config.srgr1  |= CLKGDV(val);
+        ret = count;
+    }
+    return ret;
+}
+
 /* Control attributes */
 static struct device_attribute control_attrs[] = {
-    //__ATTR(brightness, 0644, led_brightness_show, led_brightness_store),
-    __ATTR(word_length, 0444, attr_word_length_show, NULL),
-    __ATTR(frame_length, 0444, attr_frame_length_show, NULL),
-    __ATTR(frame_width, 0444, attr_frame_width_show, NULL),
-    __ATTR(frame_period, 0444, attr_frame_period_show, NULL),
-    __ATTR(clock_divider, 0444, attr_clock_divider_show, NULL),
+    __ATTR(word_length, 0664, attr_word_length_show, attr_word_length_store),
+    __ATTR(frame_length, 0664, attr_frame_length_show, attr_frame_length_store),
+    __ATTR(frame_width, 0664, attr_frame_width_show, attr_frame_width_store),
+    __ATTR(frame_period, 0664, attr_frame_period_show, attr_frame_period_store),
+    __ATTR(clock_divider, 0664, attr_clock_divider_show, attr_clock_divider_store),
     __ATTR_NULL
 };
 
 
-/*
-  Configure for 32 bit 'word' lengths with a frame sync pulse of
-  two CLKDV cycles between each 'word'. 
-  The 32 bit word lengths are determined with FWID(31).
-  The two CLKDV cycles between words is determined by FPER(33).
-*/
-static int mcbsptx_set_mcbsp_config(void)
+static void mcbsptx_set_mcbsp_config(void)
 {
-    /* num bytes in a 32-bit 'word' - 1 */
     omap_mcbsp_set_tx_threshold(OMAP_MCBSP3, 3);
-
-    /* num bits in our 32-bit 'word' - 1 */
-    mcbsp_config.srgr1 = FWID(31) | CLKGDV(DEFAULT_CLKDIV);
-
     omap_mcbsp_config(OMAP_MCBSP3, &mcbsp_config);
-
-    return 0;
 }
 
 
@@ -323,12 +432,7 @@ static int mcbsptx_open(struct inode *inode, struct file *filp)
         mcbsptx.dma_channel = dma_channel;
     }
 
-    if (mcbsptx_set_mcbsp_config())
-    {
-        printk(KERN_ERR "set_mcbsp_config() failed\n");
-        ret = -EINVAL;
-        goto fail2;
-    }
+    mcbsptx_set_mcbsp_config();
 
     /* missing ecbsp_map_dma_block() */
 
