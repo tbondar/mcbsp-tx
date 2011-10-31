@@ -19,10 +19,14 @@
 
 //#include "mcbsp-tx.h"
 
-#define DEVICE_NAME "mcbsp-tx"
+#define DEVICE_NAME "mcbsp3-tx"
 #define OMAP_MCBSP3 2
 
 #define DEFAULT_DMA_QUEUE_THRESHOLD 10
+
+/* Read a McBSP register
+   (input type: struct omap_mcbsp *mcbsp) */
+#define MCBSP_READ(mcbsp, reg) __raw_readl(mcbsp->io_base + OMAP_MCBSP_REG_##reg)
 
 struct mcbsptx {
     dev_t devt;
@@ -83,15 +87,93 @@ struct list_head dma_blocks;    /* awaiting DMA transfer */
 static mcbsptx_block_t *dma_block;
 
 /* Device Control */
-static ssize_t control_test_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t attr_word_length_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    return sprintf(buf, "%u\n", 2011);
+    unsigned int val;
+    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
+
+    switch(MCBSP_READ(mcbsp, XCR1) & XWDLEN1(0x07))
+    {
+    case XWDLEN1(OMAP_MCBSP_WORD_8):
+        val = 8;
+        break;
+    case XWDLEN1(OMAP_MCBSP_WORD_12):
+        val = 12;
+        break;
+    case XWDLEN1(OMAP_MCBSP_WORD_16):
+        val = 16;
+        break;
+    case XWDLEN1(OMAP_MCBSP_WORD_20):
+        val = 20;
+        break;
+    case XWDLEN1(OMAP_MCBSP_WORD_24):
+        val = 24;
+        break;
+    case XWDLEN1(OMAP_MCBSP_WORD_32):
+        val = 32;
+        break;
+    default:
+        val = 0;
+    }
+
+    return sprintf(buf, "%u\n", val);
+}
+
+static ssize_t attr_frame_length_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    unsigned int val;
+    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
+
+    val = (MCBSP_READ(mcbsp, XCR1) & XFRLEN1(0x7f)); /* mask bitfield */
+    val /= XFRLEN1(1); /* shift right to bit 0 */
+    val += 1;
+
+    return sprintf(buf, "%u\n", val);
+}
+
+static ssize_t attr_frame_width_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    unsigned int val;
+    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
+
+    val = (MCBSP_READ(mcbsp, SRGR1) & FWID(0xff)); /* mask bitfield */
+    val /= FWID(1); /* shift right to bit 0 */
+    val += 1;
+
+    return sprintf(buf, "%u\n", val);
+}
+
+static ssize_t attr_frame_period_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    unsigned int val;
+    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
+
+    val = (MCBSP_READ(mcbsp, SRGR2) & FPER(0x0fff)); /* mask bitfield */
+    val /= FPER(1); /* shift right to bit 0 */
+    val += 1;
+
+    return sprintf(buf, "%u\n", val);
+}
+
+static ssize_t attr_clock_divider_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    unsigned int val;
+    struct omap_mcbsp *mcbsp = id_to_mcbsp_ptr(OMAP_MCBSP3);
+
+    val = (MCBSP_READ(mcbsp, SRGR1) & CLKGDV(0xff)); /* mask bitfield */
+    val /= CLKGDV(1); /* shift right to bit 0 */
+
+    return sprintf(buf, "%u\n", val);
 }
 
 /* Control attributes */
 static struct device_attribute control_attrs[] = {
     //__ATTR(brightness, 0644, led_brightness_show, led_brightness_store),
-    __ATTR(test, 0444, control_test_show, NULL),
+    __ATTR(word_length, 0444, attr_word_length_show, NULL),
+    __ATTR(frame_length, 0444, attr_frame_length_show, NULL),
+    __ATTR(frame_width, 0444, attr_frame_width_show, NULL),
+    __ATTR(frame_period, 0444, attr_frame_period_show, NULL),
+    __ATTR(clock_divider, 0444, attr_clock_divider_show, NULL),
     __ATTR_NULL
 };
 
