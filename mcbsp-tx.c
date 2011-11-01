@@ -45,8 +45,7 @@ struct mcbsptx {
 
 static struct mcbsptx mcbsptx;
 
-#define DEFAULT_CLKDIV 83
-
+#define DATDLY_MASK  (0x03)
 #define CLKGDV_MASK (0xff)
 #define WDLEN_MASK  (0x07)
 #define FRLEN_MASK  (0x7f)
@@ -58,11 +57,11 @@ static struct omap_mcbsp_reg_cfg mcbsp_config = {
     .spcr1 = 0,
     .xcr2  = 0,
     .xcr1  = XFRLEN1(0) | XWDLEN1(OMAP_MCBSP_WORD_32),
-    .srgr1 = FWID(31) | CLKGDV(DEFAULT_CLKDIV),
-    .srgr2 = CLKSM | FPER(33),
+    .srgr1 = FWID(1) | CLKGDV(68),
+    .srgr2 = CLKSM | FPER(48),
     .mcr2 = 0,
     .mcr1 = 0,
-    .pcr0  = FSXM | CLKXM | FSXP,
+    .pcr0  = FSXM | CLKXM,
     .xccr = XDMAEN | XDISABLE,
     .rccr = 0,
 };
@@ -94,6 +93,56 @@ struct list_head dma_blocks;    /* awaiting DMA transfer */
 static mcbsptx_block_t *dma_block;
 
 /* Device Control */
+static ssize_t attr_data_delay_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    unsigned int val;
+
+    val = mcbsp_config.xcr2 & XDATDLY(DATDLY_MASK);
+    val /= XDATDLY(1);
+
+    return sprintf(buf, "%u\n", val);
+}
+
+static ssize_t attr_data_delay_store(struct device *dev, struct device_attribute *attr,
+                                     const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+    char *endp;
+    unsigned long val = simple_strtoul(buf, &endp, 10);
+    size_t count = endp - buf;
+
+    if (isspace(*endp))
+            count++;
+
+    if (count == size && val < 3) {
+        mcbsp_config.xcr2  &= ~XDATDLY(DATDLY_MASK);
+        mcbsp_config.xcr2  |= XDATDLY(val);
+        ret = count;
+    }
+    return ret;
+}
+
+static ssize_t attr_reverse_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    if (mcbsp_config.xcr2 & XCOMPAND(1))
+        return sprintf(buf, "lsb\n");
+    else
+        return sprintf(buf, "msb\n");
+}
+
+static ssize_t attr_reverse_store(struct device *dev, struct device_attribute *attr,
+                                  const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+
+    if (!strncmp(buf, "lsb", 3))
+        mcbsp_config.xcr2  |= XCOMPAND(1);
+    else if (!strncmp(buf, "msb", 3))
+        mcbsp_config.xcr2  &= ~XCOMPAND(1);
+
+    return ret;
+}
+
 static ssize_t attr_word_length_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     unsigned int val;
@@ -174,8 +223,8 @@ static ssize_t attr_frame_length_show(struct device *dev, struct device_attribut
 {
     unsigned int val;
 
-    val = mcbsp_config.xcr1 & XFRLEN1(FRLEN_MASK); /* mask bitfield */
-    val /= XFRLEN1(1); /* shift right to bit 0 */
+    val = mcbsp_config.xcr1 & XFRLEN1(FRLEN_MASK);
+    val /= XFRLEN1(1);
     val += 1;
 
     return sprintf(buf, "%u\n", val);
@@ -204,8 +253,8 @@ static ssize_t attr_frame_width_show(struct device *dev, struct device_attribute
 {
     unsigned int val;
 
-    val = mcbsp_config.srgr1 & FWID(FWID_MASK); /* mask bitfield */
-    val /= FWID(1); /* shift right to bit 0 */
+    val = mcbsp_config.srgr1 & FWID(FWID_MASK);
+    val /= FWID(1);
     val += 1;
 
     return sprintf(buf, "%u\n", val);
@@ -234,8 +283,8 @@ static ssize_t attr_frame_period_show(struct device *dev, struct device_attribut
 {
     unsigned int val;
 
-    val = mcbsp_config.srgr2 & FPER(FPER_MASK); /* mask bitfield */
-    val /= FPER(1); /* shift right to bit 0 */
+    val = mcbsp_config.srgr2 & FPER(FPER_MASK);
+    val /= FPER(1);
     val += 1;
 
     return sprintf(buf, "%u\n", val);
@@ -264,8 +313,8 @@ static ssize_t attr_clock_divider_show(struct device *dev, struct device_attribu
 {
     unsigned int val;
 
-    val = mcbsp_config.srgr1 & CLKGDV(CLKGDV_MASK); /* mask bitfield */
-    val /= CLKGDV(1); /* shift right to bit 0 */
+    val = mcbsp_config.srgr1 & CLKGDV(CLKGDV_MASK);
+    val /= CLKGDV(1);
 
     return sprintf(buf, "%u\n", val);
 }
@@ -312,6 +361,8 @@ static ssize_t attr_framesync_polarity_store(struct device *dev, struct device_a
 
 /* Control attributes */
 static struct device_attribute control_attrs[] = {
+    __ATTR(data_delay, 0664, attr_data_delay_show, attr_data_delay_store),
+    __ATTR(reverse, 0664, attr_reverse_show, attr_reverse_store),
     __ATTR(word_length, 0664, attr_word_length_show, attr_word_length_store),
     __ATTR(frame_length, 0664, attr_frame_length_show, attr_frame_length_store),
     __ATTR(frame_width, 0664, attr_frame_width_show, attr_frame_width_store),
