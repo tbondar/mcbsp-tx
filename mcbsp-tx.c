@@ -289,6 +289,27 @@ static ssize_t attr_clock_divider_store(struct device *dev, struct device_attrib
     return ret;
 }
 
+static ssize_t attr_framesync_polarity_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    if (mcbsp_config.pcr0 & FSXP)
+        return sprintf(buf, "low\n");
+    else
+        return sprintf(buf, "high\n");
+}
+
+static ssize_t attr_framesync_polarity_store(struct device *dev, struct device_attribute *attr,
+                                             const char *buf, size_t size)
+{
+    ssize_t ret = -EINVAL;
+
+    if (!strncmp(buf, "low", 3))
+        mcbsp_config.pcr0  |= FSXP;
+    else if (!strncmp(buf, "high", 4))
+        mcbsp_config.pcr0  &= ~FSXP;
+
+    return ret;
+}
+
 /* Control attributes */
 static struct device_attribute control_attrs[] = {
     __ATTR(word_length, 0664, attr_word_length_show, attr_word_length_store),
@@ -296,6 +317,7 @@ static struct device_attribute control_attrs[] = {
     __ATTR(frame_width, 0664, attr_frame_width_show, attr_frame_width_store),
     __ATTR(frame_period, 0664, attr_frame_period_show, attr_frame_period_store),
     __ATTR(clock_divider, 0664, attr_clock_divider_show, attr_clock_divider_store),
+    __ATTR(framesync_polarity, 0664, attr_framesync_polarity_show, attr_framesync_polarity_store),
     __ATTR_NULL
 };
 
